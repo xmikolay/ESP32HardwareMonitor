@@ -189,10 +189,13 @@ namespace ESP32HardwareMonitor
                 cpuFanPercent = Math.Min(100, Math.Max(0, cpuFanPercent));
                 gpuFanPercent = Math.Min(100, Math.Max(0, gpuFanPercent));
 
+                TimeSpan uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
+
                 //build data string
                 string data = $"CPU:{cpuTemp:F1},GPU:{gpuTemp:F1},RAM:{ramUsage:F1}," +
                              $"CPUPWR:{cpuPower:F0},CPUCLK:{cpuClock:F0},CPUUSE:{cpuUsage:F0},CPUFAN:{cpuFanPercent:F0}" +
-                             $"GPUPWR:{gpuPower:F0},GPUCLK:{gpuClock:F0},GPUUSE:{gpuUsage:F0},GPUFAN:{gpuFanPercent:F0}\n";
+                             $"GPUPWR:{gpuPower:F0},GPUCLK:{gpuClock:F0},GPUUSE:{gpuUsage:F0},GPUFAN:{gpuFanPercent:F0}" +
+                             $"UPTIME:{(int)uptime.TotalSeconds}\n";
 
                 port.WriteLine(data);
                 Console.WriteLine($"Sent: {data.TrimEnd()}");
