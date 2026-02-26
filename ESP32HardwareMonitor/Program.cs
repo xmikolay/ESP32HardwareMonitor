@@ -69,6 +69,9 @@ namespace ESP32HardwareMonitor
                 float gpuTemp = 0, gpuPower = 0, gpuClock = 0, gpuUsage = 0, gpuFan = 0;
                 float ramUsage = 0;
 
+                const int CPU_FAN_MAX_RPM = 2250;
+                const int GPU_FAN_MAX_RPM = 3500;
+
                 //update all hardware sensors
                 foreach (var hardware in computer.Hardware)
                 {
@@ -178,10 +181,18 @@ namespace ESP32HardwareMonitor
                     }
                 }
 
+                //convert fan RPM to percentage
+                int cpuFanPercent = (int)((cpuFan / (float)CPU_FAN_MAX_RPM) * 100);
+                int gpuFanPercent = (int)((gpuFan / (float)GPU_FAN_MAX_RPM) * 100);
+
+                //clamp to 0-100% range
+                cpuFanPercent = Math.Min(100, Math.Max(0, cpuFanPercent));
+                gpuFanPercent = Math.Min(100, Math.Max(0, gpuFanPercent));
+
                 //build data string
                 string data = $"CPU:{cpuTemp:F1},GPU:{gpuTemp:F1},RAM:{ramUsage:F1}," +
-                             $"CPUPWR:{cpuPower:F0},CPUCLK:{cpuClock:F0},CPUUSE:{cpuUsage:F0},CPUFAN:{cpuFan:F0}" +
-                             $"GPUPWR:{gpuPower:F0},GPUCLK:{gpuClock:F0},GPUUSE:{gpuUsage:F0},GPUFAN:{gpuFan:F0}\n";
+                             $"CPUPWR:{cpuPower:F0},CPUCLK:{cpuClock:F0},CPUUSE:{cpuUsage:F0},CPUFAN:{cpuFanPercent:F0}" +
+                             $"GPUPWR:{gpuPower:F0},GPUCLK:{gpuClock:F0},GPUUSE:{gpuUsage:F0},GPUFAN:{gpuFanPercent:F0}\n";
 
                 port.WriteLine(data);
                 Console.WriteLine($"Sent: {data.TrimEnd()}");
