@@ -26,11 +26,42 @@ namespace ESP32HardwareMonitor
             {
                 IsCpuEnabled = true,
                 IsGpuEnabled = true,
-                IsMemoryEnabled = true
+                IsMemoryEnabled = true,
+                IsMotherboardEnabled = true
             };
 
             computer.Open();
             Console.WriteLine("Monitoring Hardware");
+
+            // Right after computer.Open(), add this:
+            Console.WriteLine("\n=== ALL AVAILABLE FAN SENSORS ===");
+            foreach (var hardware in computer.Hardware)
+            {
+                hardware.Update();
+
+                // Check main hardware
+                foreach (var sensor in hardware.Sensors)
+                {
+                    if (sensor.SensorType == SensorType.Fan)
+                    {
+                        Console.WriteLine($"{hardware.Name} - {sensor.Name}: {sensor.Value} RPM");
+                    }
+                }
+
+                // Check subhardware (motherboard sensors)
+                foreach (var subhardware in hardware.SubHardware)
+                {
+                    subhardware.Update();
+                    foreach (var sensor in subhardware.Sensors)
+                    {
+                        if (sensor.SensorType == SensorType.Fan)
+                        {
+                            Console.WriteLine($"{subhardware.Name} - {sensor.Name}: {sensor.Value} RPM");
+                        }
+                    }
+                }
+            }
+            Console.WriteLine("=================================\n");
 
             while (true)
             {
@@ -74,10 +105,10 @@ namespace ESP32HardwareMonitor
                             }
 
                             //fan
-                            if (sensor.SensorType == SensorType.Fan && sensor.Name.Contains("CPU"))
-                            {
-                                cpuFan = sensor.Value ?? 0;
-                            }
+                            //if (sensor.SensorType == SensorType.Fan && sensor.Name.Contains("CPU"))
+                            //{
+                            //    cpuFan = sensor.Value ?? 0;
+                            //}
                         }
                     }
 
@@ -126,6 +157,22 @@ namespace ESP32HardwareMonitor
                             if (sensor.SensorType == SensorType.Data && sensor.Name.Contains("Memory Used"))
                             {
                                 ramUsage = sensor.Value ?? 0;
+                            }
+                        }
+                    }
+
+                    //get cpu fan from motherboard sensors
+                    if (hardware.HardwareType == HardwareType.Motherboard)
+                    {
+                        foreach (var subhardware in hardware.SubHardware)
+                        {
+                            subhardware.Update();
+                            foreach (var sensor in subhardware.Sensors)
+                            {
+                                if (sensor.SensorType == SensorType.Fan && sensor.Name.Contains("CPU Fan"))
+                                {
+                                    cpuFan = sensor.Value ?? 0;
+                                }
                             }
                         }
                     }
