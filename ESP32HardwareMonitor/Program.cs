@@ -34,8 +34,8 @@ namespace ESP32HardwareMonitor
 
             while (true)
             {
-                float cpuTemp = 0;
-                float gpuTemp = 0;
+                float cpuTemp = 0, cpuPower = 0, cpuClock = 0, cpuUsage = 0, cpuFan = 0;
+                float gpuTemp = 0, gpuPower = 0, gpuClock = 0, gpuUsage = 0, gpuFan = 0;
                 float ramUsage = 0;
 
                 //update all hardware sensors
@@ -43,26 +43,77 @@ namespace ESP32HardwareMonitor
                 {
                     hardware.Update();
 
-                    //get cpu temps
+                    //cpu
                     if (hardware.HardwareType == HardwareType.Cpu)
                     {
                         foreach (var sensor in hardware.Sensors)
                         {
-                            if (sensor.SensorType == SensorType.Temperature && sensor.Name.Contains("CPU Package"))
+                            //temperature
+                            if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && cpuTemp == 0)
                             {
-                                cpuTemp = sensor.Value ?? 0;
+                                cpuTemp = sensor.Value.Value;
+                            }
+
+                            //power
+                            if (sensor.SensorType == SensorType.Power && sensor.Name.Contains("Package"))
+                            {
+                                cpuPower = sensor.Value ?? 0;
+                            }
+
+                            //clock
+                            if (sensor.SensorType == SensorType.Clock && sensor.Name.Contains("Core"))
+                            {
+                                float clockValue = sensor.Value ?? 0;
+                                if (clockValue > cpuClock) cpuClock = clockValue;
+                            }
+
+                            //usage
+                            if (sensor.SensorType == SensorType.Load && sensor.Name.Contains("CPU Total"))
+                            {
+                                cpuUsage = sensor.Value ?? 0;
+                            }
+
+                            //fan
+                            if (sensor.SensorType == SensorType.Fan && sensor.Name.Contains("CPU"))
+                            {
+                                cpuFan = sensor.Value ?? 0;
                             }
                         }
                     }
 
-                    //get gpu temps
+                    //gpu
                     if (hardware.HardwareType == HardwareType.GpuAmd)
                     {
                         foreach (var sensor in hardware.Sensors)
                         {
+                            //temperature
                             if (sensor.SensorType == SensorType.Temperature && sensor.Name.Contains("GPU Core"))
                             {
                                 gpuTemp = sensor.Value ?? 0;
+                            }
+
+                            //power
+                            if (sensor.SensorType == SensorType.Power && sensor.Name.Contains("GPU Package"))
+                            {
+                                gpuPower = sensor.Value ?? 0;
+                            }
+
+                            //clock
+                            if (sensor.SensorType == SensorType.Clock && sensor.Name.Contains("GPU Core"))
+                            {
+                                gpuClock = sensor.Value ?? 0;
+                            }
+
+                            //usage
+                            if (sensor.SensorType == SensorType.Load && sensor.Name.Contains("GPU Core"))
+                            {
+                                gpuUsage = sensor.Value ?? 0;
+                            }
+
+                            //fan
+                            if (sensor.SensorType == SensorType.Fan && sensor.Name.Contains("GPU Fan"))
+                            {
+                                gpuFan = sensor.Value ?? 0;
                             }
                         }
                     }
@@ -80,8 +131,11 @@ namespace ESP32HardwareMonitor
                     }
                 }
 
-                //send data to esp32
-                string data = $"CPU:{cpuTemp:F1},GPU:{gpuTemp:F1},RAM:{ramUsage:F1}\n";
+                //build data string
+                string data = $"CPU:{cpuTemp:F1},GPU:{gpuTemp:F1},RAM:{ramUsage:F1}," +
+                             $"CPUPWR:{cpuPower:F0},CPUCLK:{cpuClock:F0},CPUUSE:{cpuUsage:F0},CPUFAN:{cpuFan:F0}" +
+                             $"GPUPWR:{gpuPower:F0},GPUCLK:{gpuClock:F0},GPUUSE:{gpuUsage:F0},GPUFAN:{gpuFan:F0}\n";
+
                 port.WriteLine(data);
                 Console.WriteLine($"Sent: {data.TrimEnd()}");
 
