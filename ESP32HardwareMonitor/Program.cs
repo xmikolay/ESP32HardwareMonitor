@@ -48,7 +48,7 @@ namespace ESP32HardwareMonitor
                     {
                         foreach (var sensor in hardware.Sensors)
                         {
-                            if (sensor.SensorType == SensorType.Temperature && sensor.Name.Contains("Package"))
+                            if (sensor.SensorType == SensorType.Temperature && sensor.Name.Contains("CPU Package"))
                             {
                                 cpuTemp = sensor.Value ?? 0;
                             }
@@ -79,6 +79,13 @@ namespace ESP32HardwareMonitor
                         }
                     }
                 }
+
+                //send data to esp32
+                string data = $"CPU:{cpuTemp:F1},GPU:{gpuTemp:F1},RAM:{ramUsage:F1}\n";
+                port.WriteLine(data);
+                Console.WriteLine($"Sent: {data.TrimEnd()}");
+
+                Thread.Sleep(1000);
             }
         }
     }
