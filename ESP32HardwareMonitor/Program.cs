@@ -1,12 +1,24 @@
-﻿using System.IO.Ports;
-using System;
-using System.Threading;
+﻿using HidSharp.Reports;
 using LibreHardwareMonitor.Hardware;
+using System;
+using System.IO.Ports;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Net.NetworkInformation;
 
 namespace ESP32HardwareMonitor
 {
     internal class Program
     {
+        static string GetActiveWifiDescription()
+        {
+            var wifiAdapter = NetworkInterface.GetAllNetworkInterfaces()
+                .FirstOrDefault(ni => ni.OperationalStatus == OperationalStatus.Up
+                                   && ni.NetworkInterfaceType == NetworkInterfaceType.Wireless80211);
+
+            return wifiAdapter?.Description;
+        }
+
         static void Main(string[] args)
         {
             SerialPort port = new SerialPort("COM3", 115200);
@@ -27,55 +39,33 @@ namespace ESP32HardwareMonitor
                 IsCpuEnabled = true,
                 IsGpuEnabled = true,
                 IsMemoryEnabled = true,
-                IsMotherboardEnabled = true
+                IsMotherboardEnabled = true,
+                IsStorageEnabled = true,
+                IsNetworkEnabled = true
             };
 
             computer.Open();
             Console.WriteLine("Monitoring Hardware");
-
-            // Right after computer.Open(), add this:
-            Console.WriteLine("\n=== ALL AVAILABLE FAN SENSORS ===");
-            foreach (var hardware in computer.Hardware)
-            {
-                hardware.Update();
-
-                // Check main hardware
-                foreach (var sensor in hardware.Sensors)
-                {
-                    if (sensor.SensorType == SensorType.Fan)
-                    {
-                        Console.WriteLine($"{hardware.Name} - {sensor.Name}: {sensor.Value} RPM");
-                    }
-                }
-
-                // Check subhardware (motherboard sensors)
-                foreach (var subhardware in hardware.SubHardware)
-                {
-                    subhardware.Update();
-                    foreach (var sensor in subhardware.Sensors)
-                    {
-                        if (sensor.SensorType == SensorType.Fan)
-                        {
-                            Console.WriteLine($"{subhardware.Name} - {sensor.Name}: {sensor.Value} RPM");
-                        }
-                    }
-                }
-            }
-            Console.WriteLine("=================================\n");
 
             while (true)
             {
                 float cpuTemp = 0, cpuPower = 0, cpuClock = 0, cpuUsage = 0, cpuFan = 0;
                 float gpuTemp = 0, gpuPower = 0, gpuClock = 0, gpuUsage = 0, gpuFan = 0;
                 float ramUsage = 0;
+                float wifiDown = 0, wifiUp = 0;
+
+                float freeC = 0, freeD = 0, freeE = 0;
 
                 const int CPU_FAN_MAX_RPM = 2250;
                 const int GPU_FAN_MAX_RPM = 3500;
+
+                string activeWifiName = GetActiveWifiDescription();
 
                 //update all hardware sensors
                 foreach (var hardware in computer.Hardware)
                 {
                     hardware.Update();
+                    //Console.WriteLine($"Found Hardware: {hardware.Name} Type: {hardware.HardwareType}");
 
                     //cpu
                     if (hardware.HardwareType == HardwareType.Cpu)
@@ -106,12 +96,6 @@ namespace ESP32HardwareMonitor
                             {
                                 cpuUsage = sensor.Value ?? 0;
                             }
-
-                            //fan
-                            //if (sensor.SensorType == SensorType.Fan && sensor.Name.Contains("CPU"))
-                            //{
-                            //    cpuFan = sensor.Value ?? 0;
-                            //}
                         }
                     }
 
@@ -179,7 +163,57 @@ namespace ESP32HardwareMonitor
                             }
                         }
                     }
-                }
+
+                    //use DriveInfo for disk info
+                    try
+                    {
+                        //helper to compute free GB for a drive letter
+                        static float GetFreeGb(string driveLetter)
+                        {
+                            try
+                            {
+                                var di = new System.IO.DriveInfo(driveLetter);
+                                if (!di.IsReady) return 0f;
+                                double freeBytes = di.AvailableFreeSpace;
+                                return (float)(freeBytes / (1024.0 * 1024.0 * 1024.0));
+                            }
+                            catch
+                            {
+                                return 0f;
+                            }
+                        }
+
+                        freeC = GetFreeGb("C:\\");
+                        freeD = GetFreeGb("D:\\");
+                        freeE = GetFreeGb("E:\\");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"DriveInfo error: {ex.Message}");
+                    }
+
+                    //network throughput
+                    if (hardware.HardwareType == HardwareType.Network)
+                    {
+                        foreach (var sensor in hardware.Sensors)
+                        {
+                            if (sensor.SensorType == SensorType.Throughput)
+                            {
+                                if (sensor.Name == "Download Speed")
+                                {
+                                    float val = ((sensor.Value ?? 0) * 8f) / 1024f / 1024f;
+                                    if (val > wifiDown) wifiDown = val; //keep the highest value found
+                                }
+
+                                if (sensor.Name == "Upload Speed")
+                                {
+                                    float val = ((sensor.Value ?? 0) * 8f) / 1024f / 1024f;
+                                    if (val > wifiUp) wifiUp = val; //keep the highest value found
+                                }
+                            }
+                        }
+                    }
+                }           
 
                 //convert fan RPM to percentage
                 int cpuFanPercent = (int)((cpuFan / (float)CPU_FAN_MAX_RPM) * 100);
@@ -191,16 +225,20 @@ namespace ESP32HardwareMonitor
 
                 TimeSpan uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
 
+                string currentTime = DateTime.Now.ToString("HH:mm:ss");
+
                 //build data string
                 string data = $"CPU:{cpuTemp:F1},GPU:{gpuTemp:F1},RAM:{ramUsage:F1}," +
-                             $"CPUPWR:{cpuPower:F0},CPUCLK:{cpuClock:F0},CPUUSE:{cpuUsage:F0},CPUFAN:{cpuFanPercent:F0}" +
-                             $"GPUPWR:{gpuPower:F0},GPUCLK:{gpuClock:F0},GPUUSE:{gpuUsage:F0},GPUFAN:{gpuFanPercent:F0}" +
-                             $"UPTIME:{(int)uptime.TotalSeconds}\n";
+                             $"CPUPWR:{cpuPower:F0},CPUCLK:{cpuClock:F0},CPUUSE:{cpuUsage:F0},CPUFAN:{cpuFanPercent}," +
+                             $"GPUPWR:{gpuPower:F0},GPUCLK:{gpuClock:F0},GPUUSE:{gpuUsage:F0},GPUFAN:{gpuFanPercent}," +
+                             $"UPTIME:{(int)uptime.TotalSeconds}," +
+                             $"DISKC:{freeC:F1},DISKD:{freeD:F1},DISKE:{freeE:F1}," +
+                             $"WIFIDN:{wifiDown:F1},WIFIUP:{wifiUp:F1}\n";
 
                 port.WriteLine(data);
                 Console.WriteLine($"Sent: {data.TrimEnd()}");
 
-                Thread.Sleep(1000);
+                Thread.Sleep(500);
             }
         }
     }
